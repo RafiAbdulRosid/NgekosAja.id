@@ -1,0 +1,39 @@
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #FAFAFA;
+  color: #263238;
+}
+
+h1, h2, h3, h4, h5, h6, .navbar-brand {
+  font-family: 'Poppins', sans-serif;
+}
+
+.btn-primary {
+  background-color: #FF8A65;
+  border: none;
+}
+.btn-primary:hover {
+  background-color: #FFD54F;
+  color: #263238;
+}
+
+.card {
+  border: none;
+  border-radius: 1rem;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+}
+
+.hero {
+  background: linear-gradient(120deg,#00BFA6,#A5D6A7);
+  color: white;
+  padding: 4rem 0;
+  border-radius: 0 0 2rem 2rem;
+}
+.hero h1 {
+  font-weight: 600;
+}
+
+.navbar-brand {
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
