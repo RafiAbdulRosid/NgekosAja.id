@@ -1,244 +1,290 @@
 <?php
 // kos/detail.php
 session_start();
-ini_set('display_errors',1);
+ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-// Pastikan jalur ke db.php sudah benar. Asumsi: kos/detail.php berada di dalam folder kos/
+// Pastikan path ke db.php benar (naik satu folder)
 require_once __DIR__ . '/../db.php';
 
-// base URL (sesuaikan folder projectmu)
 $baseUrl = '/NgekosAja.id/';
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 if ($id <= 0) {
-    http_response_code(400); echo "ID kos tidak valid."; exit;
+    echo "ID kos tidak valid."; exit;
 }
 
-// 1. Ambil kos + owner (menggunakan tabel 'kos')
+// 1. Ambil data Kos + Owner
 $stmt = $pdo->prepare("SELECT k.*, u.fullname AS owner_name, u.phone AS owner_phone, u.email AS owner_email FROM kos k JOIN users u ON u.id = k.owner_id WHERE k.id = ? LIMIT 1");
 $stmt->execute([$id]);
 $kos = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$kos) { 
-    http_response_code(404); echo "Kos tidak ditemukan."; 
-    $pdo = null; // Tutup koneksi
-    exit; 
+    echo "Kos tidak ditemukan."; 
+    $pdo = null; exit; 
 }
 
-// 2. Ambil kamar (menggunakan tabel 'kamar')
+// 2. Ambil Kamar
 $stmt = $pdo->prepare("SELECT * FROM kamar WHERE kos_id = ? ORDER BY id ASC");
 $stmt->execute([$id]);
 $kamars = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// 3. Ambil images (menggunakan tabel 'kos_images')
+// 3. Ambil Gambar
 $stmt = $pdo->prepare("SELECT filename FROM kos_images WHERE kos_id = ? ORDER BY id ASC");
 $stmt->execute([$id]);
 $images = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-// Cek login/role
+// Cek Login & Role
 $is_logged_in = !empty($_SESSION['user_id']);
 $current_role = $_SESSION['role'] ?? null;
 
-// --- LOGIKA BACK LINK BARU ---
-// Penjelasan: Jika yang melihat adalah pemilik kos yang sama, kembali ke dashboard.
+// Logika Tombol Kembali
 if ($is_logged_in && $current_role === 'pemilik' && $_SESSION['user_id'] == $kos['owner_id']) {
     $backUrl = $baseUrl . 'dashboard_owner.php';
 } else {
-    $backUrl = $baseUrl . 'kos/list.php';
+    $backUrl = $baseUrl . 'index.php'; // Kembali ke pencarian utama
 }
-// -----------------------------
 
-// Tutup koneksi setelah selesai mengambil data
-$pdo = null; 
+$pdo = null;
 ?>
 <!doctype html>
 <html lang="id">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Detail - <?= htmlspecialchars($kos['name']) ?> | NgekosAja.id</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Nunito+Sans:wght@400;500&display=swap" rel="stylesheet">
+    <title>Detail - <?= htmlspecialchars($kos['name']) ?></title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
     <style>
-        :root{--primary:#00BFA6;--secondary:#FF8A65;--light:#FAFAFA;--dark:#263238}
+        :root{
+            --primary:#00BFA6;
+            --secondary:#FF8A65;
+            --light:#FFFFFF;
+            --bg-light:#F4F8F9;
+            --dark:#263238;
+            --text-muted:#607D8B;
+        }
         *{box-sizing:border-box}
-        body{font-family:'Nunito Sans',sans-serif;margin:0;background:var(--light);color:var(--dark)}
-        .wrap{max-width:1100px;margin:28px auto;padding:0 16px}
-        .topbar{display:flex;justify-content:space-between;align-items:center;padding:12px 0}
-        .card{background:#fff;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,0.06);overflow:hidden}
-        .gallery{display:grid;grid-template-columns:1fr 140px;gap:12px}
-        .gallery img{width:100%;height:360px;object-fit:cover;border-radius:6px}
-        .thumbs{display:flex;flex-direction:column;gap:8px}
-        .thumbs img{height:80px;object-fit:cover;border-radius:6px;cursor:pointer;opacity:.95;border:2px solid transparent}
-        .thumbs img.active{border-color:var(--primary);opacity:1}
-        .info{padding:18px}
-        .info h1{font-family:'Poppins',sans-serif;margin:0 0 6px}
-        .meta{color:#607D8B;font-size:14px;margin-bottom:10px}
-        .price{font-weight:700;font-size:18px;margin-bottom:8px}
-        .kamar-list{padding:14px}
-        .kamar-item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px dashed #eee}
-        .badge{padding:6px 10px;border-radius:10px;font-weight:700;font-size:13px}
-        .badge.kosong{background:#A5D6A7;color:#063}
-        .btn{display:inline-block;padding:10px 14px;border-radius:10px;border:none;background:var(--secondary);color:#fff;font-weight:700;text-decoration:none;cursor:pointer}
-        .btn.alt{background:#fff;color:var(--dark);border:1px solid #ddd}
-        .aside{margin-left:20px}
-        @media(max-width:900px){ .gallery{grid-template-columns:1fr} .thumbs{flex-direction:row;overflow:auto} .aside{margin-left:0} }
-        .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.45)}
-        .modal.show{display:flex}
-        .modal .box{background:#fff;padding:18px;border-radius:10px;max-width:420px;width:100%}
-        label{display:block;margin:8px 0 4px;font-weight:600}
-        input,textarea,select{width:100%;padding:10px;border-radius:8px;border:1px solid #ddd}
+        body{font-family:'Nunito Sans',sans-serif;margin:0;background:var(--bg-light);color:var(--dark)}
+        
+        .wrap{max-width:1100px;margin:20px auto;padding:0 20px}
+        
+        /* Header & Nav */
+        .topbar{display:flex;justify-content:space-between;align-items:center;padding:15px 0; margin-bottom:10px;}
+        .logo{font-family:'Poppins',sans-serif;font-weight:700;font-size:22px;color:var(--primary);text-decoration:none}
+        .btn-link{color:var(--primary);text-decoration:none;font-weight:600;}
+        
+        /* Layout Utama */
+        .main-content{display:grid; grid-template-columns: 1fr 340px; gap:25px;}
+        @media(max-width:900px){ .main-content{grid-template-columns:1fr;} }
+
+        /* Kartu Putih */
+        .card{background:var(--light); border-radius:15px; box-shadow:0 5px 20px rgba(0,0,0,0.05); padding:20px; overflow:hidden;}
+        
+        /* Gallery */
+        .gallery img#mainImg{width:100%; height:400px; object-fit:cover; border-radius:12px; margin-bottom:10px;}
+        .thumbs{display:flex; gap:10px; overflow-x:auto;}
+        .thumbs img{width:80px; height:60px; object-fit:cover; border-radius:8px; cursor:pointer; opacity:0.7; transition:0.3s;}
+        .thumbs img.active, .thumbs img:hover{opacity:1; border:2px solid var(--primary);}
+
+        /* Info Kos */
+        .info h1{font-family:'Poppins',sans-serif; margin:0 0 5px; font-size:28px;}
+        .meta{color:var(--text-muted); margin-bottom:15px; font-size:15px;}
+        .price{font-size:24px; font-weight:700; color:#388E3C; margin-bottom:15px;}
+        .desc{line-height:1.6; color:#555;}
+
+        /* Daftar Kamar */
+        .kamar-list{margin-top:25px;}
+        .kamar-item{
+            display:flex; justify-content:space-between; align-items:center;
+            padding:15px; border:1px solid #eee; border-radius:10px; margin-bottom:10px;
+            background:#fff; transition:transform 0.2s;
+        }
+        .kamar-item:hover{transform:translateY(-3px); box-shadow:0 5px 15px rgba(0,0,0,0.05);}
+        .kamar-info .k-name{font-weight:700; font-size:16px;}
+        .kamar-info .k-price{color:var(--text-muted); font-size:14px;}
+        
+        /* Badges & Buttons */
+        .badge{padding:5px 10px; border-radius:6px; font-size:12px; font-weight:700;}
+        .badge.kosong{background:#E8F5E9; color:#2E7D32;}
+        .badge.penuh{background:#FFEBEE; color:#C62828;}
+
+        .btn{
+            padding:10px 18px; border-radius:8px; border:none; font-weight:600; cursor:pointer; text-decoration:none; display:inline-block;
+            transition:0.2s;
+        }
+        .btn-primary{background:var(--secondary); color:#fff;}
+        .btn-primary:hover{background:#FF7043; transform:translateY(-2px);}
+        .btn-login{background:#eee; color:#555;}
+
+        /* MODAL STYLE (Yang diperbaiki) */
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex; justify-content: center; align-items: center; z-index: 1000;
+            visibility: hidden; opacity: 0; transition: visibility 0s, opacity 0.3s;
+        }
+        .modal.show { visibility: visible; opacity: 1; }
+        .modal-box {
+            background: var(--light); border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            width: 90%; max-width: 420px; transform: translateY(-20px); transition: transform 0.3s ease-out;
+            padding:0;
+        }
+        .modal.show .modal-box { transform: translateY(0); }
+        .modal-header{ padding:20px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
+        .modal-body{ padding:25px; }
+        .modal-footer{ padding:15px 20px; background:#f9f9f9; border-radius:0 0 15px 15px; text-align:right; }
+        
+        .form-control-modal{ width:100%; padding:12px; border:1px solid #ddd; border-radius:8px; font-size:16px; }
+        .close-btn{ background:none; border:none; font-size:24px; cursor:pointer; color:#999; }
     </style>
 </head>
 <body>
-    <div class="wrap">
-        <div class="topbar"><a href="<?= $baseUrl ?>index.php" style="text-decoration:none;font-weight:700;color:var(--primary)">NgekosAja.id</a>
-            <div>
-                <?php if($is_logged_in): ?>
-                    Halo, <?= htmlspecialchars($_SESSION['fullname'] ?? $_SESSION['username'] ?? 'User') ?> — <a href="<?= $baseUrl ?>logout.php">Logout</a>
-                <?php else: ?>
-                    <a href="<?= $baseUrl ?>login.php">Login</a> | <a href="<?= $baseUrl ?>register.php">Daftar</a>
+
+<div class="wrap">
+    <div class="topbar">
+        <a href="<?= $baseUrl ?>index.php" class="logo">NgekosAja.id</a>
+        <div>
+            <?php if($is_logged_in): ?>
+                Hai, <?= htmlspecialchars($_SESSION['fullname'] ?? 'User') ?>
+            <?php else: ?>
+                <a href="<?= $baseUrl ?>login.php" class="btn-link">Login</a>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <div style="margin-bottom:15px;">
+        <a href="<?= htmlspecialchars($backUrl) ?>" class="btn-link">← Kembali</a>
+    </div>
+
+    <div class="main-content">
+        <div class="left-col">
+            <div class="card gallery">
+                <?php
+                    if (!empty($images)) {
+                        $mainSrc = $baseUrl . ltrim($images[0], '/');
+                    } else {
+                        $mainSrc = "https://picsum.photos/seed/kos{$id}/800/500";
+                    }
+                ?>
+                <img id="mainImg" src="<?= htmlspecialchars($mainSrc) ?>" alt="Foto Utama">
+                <div class="thumbs">
+                    <?php if($images): foreach($images as $i=>$img): $src=$baseUrl.ltrim($img,'/'); ?>
+                        <img src="<?= $src ?>" onclick="changeImg('<?= $src ?>')" class="<?= $i==0?'active':'' ?>">
+                    <?php endforeach; endif; ?>
+                </div>
+            </div>
+
+            <div class="card info" style="margin-top:20px;">
+                <h1><?= htmlspecialchars($kos['name']) ?></h1>
+                <div class="meta">
+                    <?= htmlspecialchars($kos['city']) ?> • <?= htmlspecialchars($kos['type']) ?>
+                </div>
+                <div class="price">
+                    Rp <?= number_format($kos['price'], 0, ',', '.') ?> / bulan
+                </div>
+                <hr style="border:0; border-top:1px solid #eee; margin:15px 0;">
+                <h4>Deskripsi</h4>
+                <div class="desc"><?= nl2br(htmlspecialchars($kos['description'])) ?></div>
+            </div>
+
+            <div class="card kamar-list">
+                <h3 style="margin-top:0;">Pilih Kamar</h3>
+                
+                <?php if($kamars): foreach($kamars as $k): ?>
+                    <div class="kamar-item">
+                        <div class="kamar-info">
+                            <div class="k-name"><?= htmlspecialchars($k['name']) ?></div>
+                            <div class="k-price">Rp <?= number_format($k['price'],0,',','.') ?></div>
+                        </div>
+                        <div class="kamar-action">
+                            <?php if($k['status'] == 'kosong'): ?>
+                                <span class="badge kosong" style="margin-right:10px;">Tersedia</span>
+                                
+                                <?php if($is_logged_in && $current_role === 'pencari'): ?>
+                                    <button class="btn btn-primary" onclick="openBooking(<?= $k['id'] ?>, '<?= htmlspecialchars($k['name'], ENT_QUOTES) ?>')">
+                                        Ajukan Sewa
+                                    </button>
+                                <?php elseif(!$is_logged_in): ?>
+                                    <a href="<?= $baseUrl ?>login.php" class="btn btn-login">Login utk Sewa</a>
+                                <?php endif; ?>
+
+                            <?php else: ?>
+                                <span class="badge penuh">Penuh / Terisi</span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endforeach; else: ?>
+                    <p>Belum ada data kamar.</p>
                 <?php endif; ?>
             </div>
         </div>
 
-        <div class="card" style="padding:0 0 18px">
-            <div style="padding:16px">
-                <a href="<?= htmlspecialchars($backUrl) ?>" style="color:var(--primary);text-decoration:none">← Kembali</a>
+        <aside class="right-col">
+            <div class="card">
+                <h4 style="margin-top:0;">Pemilik Kos</h4>
+                <div style="font-weight:700; margin-bottom:5px;"><?= htmlspecialchars($kos['owner_name']) ?></div>
+                <div style="font-size:14px; color:#666;">Hubungi via aplikasi untuk detail lebih lanjut.</div>
             </div>
 
-            <div style="padding:0 18px 18px">
-                <div style="display:flex;gap:18px;flex-wrap:wrap">
-                    <div style="flex:1;min-width:320px">
-                        <div class="gallery card" style="padding:12px">
-                            <div>
-                                <?php
-                                    if (!empty($images)) {
-                                        $mainSrc = $baseUrl . ltrim($images[0], '/');
-                                    } else {
-                                        $mainSrc = "https://picsum.photos/seed/kos{$id}/1200/700";
-                                    }
-                                ?>
-                                <img id="mainImg" src="<?= htmlspecialchars($mainSrc) ?>" alt="main">
-                            </div>
-
-                            <div class="thumbs">
-                                <?php if (!empty($images)):
-                                    foreach($images as $i => $fn):
-                                        $url = $baseUrl . ltrim($fn, '/');
-                                ?>
-                                    <img src="<?= htmlspecialchars($url) ?>" data-src="<?= htmlspecialchars($url) ?>" class="<?= $i===0 ? 'active' : '' ?>" alt="t<?= $i ?>">
-                                <?php endforeach; else:
-                                    for($i=1;$i<=4;$i++):
-                                        $seed = $id . '-' . $i; ?>
-                                        <img src="https://picsum.photos/seed/<?= $seed ?>/400/300" data-src="https://picsum.photos/seed/<?= $seed ?>/1200/700" class="<?= $i===1 ? 'active' : '' ?>">
-                                <?php endfor; endif; ?>
-                            </div>
-                        </div>
-
-                        <div class="card info" style="margin-top:14px">
-                            <h1><?= htmlspecialchars($kos['name']) ?></h1>
-                            <div class="meta"><?= htmlspecialchars($kos['city']) ?> • <?= htmlspecialchars($kos['type']) ?></div>
-                            <div class="price">Rp <?= number_format($kos['price'],0,',','.') ?> / bulan</div>
-                            <div class="keterangan"><?= nl2br(htmlspecialchars($kos['description'] ?: 'Tidak ada deskripsi.')) ?></div>
-                        </div>
-
-                        <div class="card kamar-list" style="margin-top:14px;padding:12px">
-                            <h3 style="margin:6px 0 10px;font-family:'Poppins',sans-serif">Daftar Kamar</h3>
-                            <?php if($kamars): foreach($kamars as $k): ?>
-                                <div class="kamar-item">
-                                    <div>
-                                        <div style="font-weight:700"><?= htmlspecialchars($k['name']) ?></div>
-                                        <div style="color:#78909C">Rp <?= number_format($k['price'],0,',','.') ?></div>
-                                    </div>
-                                    <div style="text-align:right">
-                                        <span class="badge <?= $k['status']=='kosong' ? 'kosong' : '' ?>"><?= htmlspecialchars($k['status']) ?></span>
-                                        <?php if($k['status']=='kosong'): ?>
-                                            <?php if($is_logged_in && $current_role === 'pencari'): ?>
-                                                <button class="btn" onclick="openBooking(<?= $k['id'] ?>,'<?= htmlspecialchars($k['name'],ENT_QUOTES) ?>')">Ajukan Sewa</button>
-                                            <?php elseif(!$is_logged_in): ?>
-                                                <a class="btn" href="<?= $baseUrl ?>login.php">Login untuk sewa</a>
-                                            <?php else: ?>
-                                                <span class="small" style="display:block;margin-top:8px;color:#999">Hanya pencari dapat booking</span>
-                                            <?php endif; ?>
-                                        <?php else: ?>
-                                            <span class="small" style="color:#999">Tidak tersedia</span>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                            <?php endforeach; else: ?>
-                                <div>Belum ada kamar yang diinput.</div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-
-                    <aside style="width:320px" class="aside">
-                        <div class="card" style="padding:14px">
-                            <h4 style="margin:0 0 8px">Info Pemilik</h4>
-                            <div style="font-weight:700"><?= htmlspecialchars($kos['owner_name']) ?></div>
-                            <?php if(!empty($kos['owner_phone'])): ?><div><?= htmlspecialchars($kos['owner_phone']) ?></div><?php endif; ?>
-                            <?php if(!empty($kos['owner_email'])): ?><div><?= htmlspecialchars($kos['owner_email']) ?></div><?php endif; ?>
-                            <div style="margin-top:12px">
-                                <?php if($is_logged_in && $current_role==='pencari'): ?>
-                                    <a class="btn" href="<?= $baseUrl ?>kos/booking.php?kos_id=<?= $id ?>">Ajukan Sewa</a>
-                                <?php else: ?>
-                                    <a class="btn" href="<?= $baseUrl ?>login.php">Login untuk Ajukan</a>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-
-                        <div style="height:12px"></div>
-
-                        <div class="card" style="padding:12px">
-                            <h4 style="margin-top:0">Lokasi</h4>
-                            <?php $addr = rawurlencode($kos['address'] ?? $kos['city'] ?? ''); ?>
-                            <?php if(!empty($addr)): ?>
-                                <iframe src="https://maps.google.com/maps?q=<?= $addr ?>&output=embed" style="width:100%;height:200px;border:0;border-radius:8px"></iframe>
-                            <?php else: ?>
-                                <div>Alamat belum diisi.</div>
-                            <?php endif; ?>
-                        </div>
-                    </aside>
-                </div>
+            <div class="card" style="margin-top:20px;">
+                <h4 style="margin-top:0;">Lokasi</h4>
+                <?php $addr = rawurlencode($kos['address'] ?? $kos['city'] ?? ''); ?>
+                <iframe src="https://maps.google.com/maps?q=<?= $addr ?>&output=embed" style="width:100%;height:200px;border:0;border-radius:8px;"></iframe>
             </div>
-        </div>
+        </aside>
     </div>
+</div>
 
-    <div id="modalBook" class="modal" role="dialog" aria-hidden="true">
-        <div class="box">
-            <h4>Ajukan Sewa - <span id="bkRoomName"></span></h4>
-            <form id="formBook" method="post" action="<?= $baseUrl ?>kos/booking.php">
+<div id="modalBook" class="modal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <h4 style="margin:0;">Ajukan Sewa</h4>
+            <button class="close-btn" onclick="closeBooking()">&times;</button>
+        </div>
+        <form method="post" action="<?= $baseUrl ?>kos/booking.php">
+            <div class="modal-body">
+                <p style="margin-top:0;">Kamar: <strong id="bkRoomName" style="color:var(--primary)"></strong></p>
+                
                 <input type="hidden" name="kos_id" value="<?= $id ?>">
                 <input type="hidden" name="kamar_id" id="bkKamarId" value="">
-                <label>Pesan untuk pemilik (opsional)</label>
-                <textarea name="message" rows="4" placeholder="Perkenalkan diri, tanggal masuk, pertanyaan..."></textarea>
-                <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
-                    <button type="button" class="btn alt" onclick="closeBooking()">Batal</button>
-                    <button type="submit" class="btn">Kirim Pengajuan</button>
-                </div>
-            </form>
-        </div>
+                
+                <label style="display:block; margin-bottom:8px; font-weight:600;">Mulai Sewa Tanggal:</label>
+                <input type="date" name="start_date" required min="<?= date('Y-m-d') ?>" class="form-control-modal">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn" style="background:transparent; color:#666;" onclick="closeBooking()">Batal</button>
+                <button type="submit" class="btn btn-primary">Kirim Pengajuan</button>
+            </div>
+        </form>
     </div>
+</div>
 
-    <script>
-        // gallery thumb handlers
-        document.querySelectorAll('.thumbs img').forEach(function(img){
-            img.addEventListener('click', function(){
-                document.getElementById('mainImg').src = this.dataset.src || this.src;
-                document.querySelectorAll('.thumbs img').forEach(i=>i.classList.remove('active'));
-                this.classList.add('active');
-            });
-        });
+<script>
+    // Ganti Gambar Gallery
+    function changeImg(src) {
+        document.getElementById('mainImg').src = src;
+    }
 
-        // booking modal
-        function openBooking(kamarId, kamarName){
-            document.getElementById('bkKamarId').value = kamarId;
-            document.getElementById('bkRoomName').textContent = kamarName;
-            document.getElementById('modalBook').classList.add('show');
+    // Buka Modal Booking
+    function openBooking(kamarId, kamarName) {
+        document.getElementById('bkKamarId').value = kamarId;
+        document.getElementById('bkRoomName').textContent = kamarName;
+        document.getElementById('modalBook').classList.add('show');
+    }
+
+    // Tutup Modal
+    function closeBooking() {
+        document.getElementById('modalBook').classList.remove('show');
+    }
+    
+    // Tutup jika klik di luar box
+    window.onclick = function(event) {
+        var modal = document.getElementById('modalBook');
+        if (event.target == modal) {
+            closeBooking();
         }
-        function closeBooking(){
-            document.getElementById('modalBook').classList.remove('show');
-        }
-    </script>
+    }
+</script>
+
 </body>
 </html>
