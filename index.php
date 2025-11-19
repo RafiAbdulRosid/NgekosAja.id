@@ -1,6 +1,6 @@
 <?php
-// index.php - tampilan baru mirip UI screenshot
 session_start();
+
 require_once __DIR__ . '/db.php';
 
 $baseUrl = '/NgekosAja.id/';
@@ -11,12 +11,14 @@ $page = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 9;
 $offset = ($page - 1) * $perPage;
 
+// base query (tetap sama)
 $sqlBase = "
     FROM kos k
     JOIN users u ON u.id = k.owner_id
-    WHERE 1=1 
+    WHERE 1=1
 ";
 
+// search
 $params = [];
 if ($q !== '') {
     $sqlBase .= " AND (k.name LIKE ? OR k.city LIKE ?)";
@@ -24,14 +26,16 @@ if ($q !== '') {
     $params[] = "%$q%";
 }
 
+// count
 $stmt = $pdo->prepare("SELECT COUNT(*) AS cnt " . $sqlBase);
 $stmt->execute($params);
 $total = (int)$stmt->fetchColumn();
 $pages = max(1, ceil($total / $perPage));
 
+// fetch kos data
 $sqlFetch = "
     SELECT k.id, k.name, k.city, k.price, k.type, u.fullname AS owner_name,
-     (SELECT filename FROM kos_images WHERE kos_id = k.id ORDER BY id ASC LIMIT 1) AS thumb
+      (SELECT filename FROM kos_images WHERE kos_images.kos_id = k.id ORDER BY id ASC LIMIT 1) AS thumb
     $sqlBase
     ORDER BY k.created_at DESC
     LIMIT $perPage OFFSET $offset
@@ -39,13 +43,15 @@ $sqlFetch = "
 $stmt = $pdo->prepare($sqlFetch);
 $stmt->execute($params);
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$pdo = null;
 ?>
 <!doctype html>
 <html lang="id">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NgekosAja.id — Cari Kos Terbaik</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>NgekosAja.id — Cari Kos Terbaik</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
 
@@ -78,12 +84,8 @@ header {
     justify-content:space-between;
     align-items:center;
 }
-.logo {
-    font-family:'Poppins';
-    font-weight:700;
-    font-size:26px;
-    text-decoration:none;
-    color:#000;
+.logo img {
+    max-height:48px;
 }
 .nav-links a {
     font-weight:600;
@@ -107,7 +109,7 @@ header {
     font-weight:600;
 }
 
-/* HERO BARU DENGAN GAMBAR */
+/* HERO */
 .hero {
     width:100%;
     height:380px;
@@ -165,24 +167,6 @@ header {
     border-radius:10px;
     color:#fff;
     font-weight:600;
-}
-
-/* SECTION KOS (NEW) */
-.section-kos-wrapper {
-    max-width:1200px;
-    margin:60px auto 40px;
-    background:#fff;
-    padding:35px 30px;
-    border-radius:20px;
-    box-shadow:0 10px 24px rgba(0,0,0,0.06);
-}
-
-.section-kos-wrapper h3 {
-    font-family:"Poppins";
-    font-size:26px;
-    font-weight:700;
-    margin:0 0 25px;
-    color:var(--dark);
 }
 
 /* GRID */
@@ -245,35 +229,27 @@ footer {
     margin-bottom:10px;
     opacity:0.9;
 }
-.logo-img {
-    max-height: 48px;
-    width: auto;
-    display: block;
-}
 </style>
 </head>
 
 <body>
 
+<!-- HEADER BARU -->
 <header>
     <div class="navbar">
         <a href="<?= $baseUrl ?>index.php" class="logo">
-            <img src="<?= $baseUrl ?>assets/uploads/logo.png" alt="NgekosAja.id" class="logo-img">
+            <img src="<?= $baseUrl ?>assets/uploads/logo.png" alt="NgekosAja.id">
         </a>
-            <div class="nav-links">
-        <?php if (!empty($_SESSION['user_id'])): ?>
-            Halo, <b><?= htmlspecialchars($_SESSION['fullname']) ?></b>
-            <a href="<?= $baseUrl ?>logout.php" class="btn-outline">Logout</a>
-        <?php else: ?>
-            <a href="<?= $baseUrl ?>login.php" class="btn-outline">Login</a>
-            <a href="<?= $baseUrl ?>register.php" class="btn-white">Daftar</a>
-        <?php endif; ?>
+        <div class="nav-links">
+        <?php if(!empty($_SESSION['user_id'])): ?> Halo, <b><?= htmlspecialchars($_SESSION['fullname'] ?? $_SESSION['username']) ?></b> | 
+            <a href="<?= $baseUrl . (($_SESSION['role'] ?? '') === 'pemilik' ? 'dashboard_owner.php' : 'dashboard_user.php') ?>" class="btn-outline">Dashboard</a> | 
+            <a href="<?= $baseUrl ?>logout.php" class="btn-outline">Logout</a> <?php else: ?> <a href="<?= $baseUrl ?>login.php" class="btn-outline">Login</a> 
+            <a href="<?= $baseUrl ?>register.php" class="btn-white" >Daftar</a> <?php endif; ?>
         </div>
     </div>
 </header>
 
-
-<!-- HERO BARU -->
+<!-- HERO -->
 <div class="hero">
     <div class="hero-content">
         <h2>Temukan kost terbaik dekat kampusmu!</h2>
@@ -310,8 +286,9 @@ footer {
 <?php else: ?>
 
     <div class="grid">
-        <?php foreach($rows as $r): 
-            $thumb = !empty($r['thumb']) 
+        <?php foreach($rows as $r):
+
+            $thumb = !empty($r['thumb'])
                 ? $baseUrl . ltrim($r['thumb'],'/')
                 : "https://picsum.photos/seed/kos{$r['id']}/400/300";
         ?>
@@ -340,9 +317,9 @@ footer {
 
 <?php endif; ?>
 
-
+<!-- PAGINATION -->
 <?php if ($pages > 1): ?>
-    <div class="pager" style="text-align:center;margin-top:30px;display:flex;justify-content:center;gap:20px;align-items:center;">
+    <div style="text-align:center;margin-top:30px;display:flex;justify-content:center;gap:20px;align-items:center;">
 
         <?php if ($page > 1): ?>
             <a href="?<?= http_build_query(['q'=>$q,'page'=>$page-1]) ?>"
@@ -367,7 +344,7 @@ footer {
 
 </div>
 
-
+<!-- FOOTER BARU -->
 <footer>
     <div class="footer-wrap">
         <div class="footer-logo">NgekosAja.id</div>
@@ -375,10 +352,9 @@ footer {
     </div>
     © <?= date('Y') ?> NgekosAja.id — All rights reserved.
      <div style="margin-top:10px;font-size:13px;">
-                <a href="#" class="btn-link" style="margin:0 8px;">Kebijakan Privasi</a> | 
-                <a href="#" class="btn-link" style="margin:0 8px;">Kontak Kami</a>
-            
-        </div>
+        <a href="#" style="color:white;text-decoration:none;margin:0 8px;">Kebijakan Privasi</a> |
+        <a href="#" style="color:white;text-decoration:none;margin:0 8px;">Kontak Kami</a>
+    </div>
 </footer>
 
 </body>
